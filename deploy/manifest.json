@@ -16,9 +16,5 @@
     "permissions": [
         "bookmarks"
     ],
-<<<<<<< HEAD
-    "version": "2016.6.8.0"
-=======
     "version": "2016.11.6.0"
->>>>>>> master
 }
