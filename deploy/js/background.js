@@ -5,29 +5,32 @@
 //-----------
 var s = { // s is short for Sprucemarks
     'a': { // arrays
-        'delay_queue': [], // if option "create_delay" is true then keep track of which ids and folders will be sorted once option "create_delay_detail" seconds have passed
+        'delay_queue': [],   // if option "create_delay" is true then keep track of which ids and folders will be sorted once option "create_delay_detail" seconds have passed
         'reorder_queue': [], // keep track of the sort order for a particular folder while it is being processed
-        'sort_queue': [] // keep track of which folder IDs have been queued for sorting
+        'sort_queue': []     // keep track of which folder IDs have been queued for sorting
     },
-    'ancestor': { // keeps track of the bookmark IDs for the two root bookmark elements
-        'bookmarks_bar': 0, // always id 0
-        'other_bookmarks': 1 // this id can change if a massive delete and reimport ever took place
+    'ancestorID': { // keeps track of the bookmark IDs for root bookmark elements, each of these will itself have a parent with the ID of 0
+        'bookmarks_bar'   : null, // usually ID 1
+        'other_bookmarks' : null, // usually ID 2
+        'mobile_bookmarks': null  // usually ID 3
     },
     'defaults': {
-        'option_create_delay'            : 1,
-        'option_create_delay_detail'     : 45,
-        'option_bookmarks_bar_sort'      : '',
-        'option_bookmarks_bar_sub_sort'  : '',
-        'option_other_bookmarks_sort'    : '',
-        'option_other_bookmarks_sub_sort': ''
+        'option_create_delay'             : 1,
+        'option_create_delay_detail'      : 45,
+        'option_bookmarks_bar_sort'       : '',
+        'option_bookmarks_bar_sub_sort'   : '',
+        'option_other_bookmarks_sort'     : '',
+        'option_other_bookmarks_sub_sort' : '',
+        'option_mobile_bookmarks_sort'    : '',
+        'option_mobile_bookmarks_sub_sort': ''
     },
     'delay_timer': '', // used to keep track of one setTimeout call when the option create_delay is enabled and a bookmark onCreate event has happened
     'log': false, // make sure this is false when publishing to the chrome web store
     'new_options': false, // will be set to true if new options are available
     'status': {
-        'import_active': false, // true if bookmarks are actively being imported
+        'import_active'   : false, // true if bookmarks are actively being imported
         'listeners_active': false, // true if maintenance listeners are active
-        'sort_active': 0 // if greater than 0, delay activation of the maintenance listeners
+        'sort_active'     : 0      // if greater than 0, delay activation of the maintenance listeners
     },
     'version': {
         'current': function() {
@@ -115,6 +118,49 @@ s.delay_sort = function s_delay_sort() {
     s.a.delay_queue = []
 } // s.delay_sort
 
+s.findAncestors = function s_findAncestors(callback) {
+    /*
+    Find IDs for root level containers like the Bookmarks Bar, Mobile Bookmarks, and Other Bookmarks.
+    @param  {Function}  [callback]  Optional callback function.
+
+    Callback Usage
+        s.findAncestors(function() { console.log('done') })
+    */
+    chrome.bookmarks.getChildren('0', function(o) {
+        for (var i in o) {
+            var title = o[i].title.toLowerCase()
+            var id = parseInteger(o[i].id)
+
+            if (title === 'bookmarks bar') {
+                s.ancestorID.bookmarks_bar = id
+            } else if (title === 'other bookmarks') {
+                s.ancestorID.other_bookmarks = id
+            } else if (title === 'mobile bookmarks') {
+                s.ancestorID.mobile_bookmarks = id
+            }
+        }
+
+        if (s.ancestorID.bookmarks_bar === null) {
+            s.ancestorID.bookmarks_bar = 1 // best guess
+            log('s.findAncestors -> Had to guess ID for s.ancestorID.bookmarks_bar')
+        }
+
+        if (s.ancestorID.other_bookmarks === null) {
+            s.ancestorID.other_bookmarks = 2 // best guess
+            log('s.findAncestors -> Had to guess ID for s.ancestorID.other_bookmarks')
+        }
+
+        if (s.ancestorID.mobile_bookmarks === null) {
+            s.ancestorID.mobile_bookmarks = 3 // best guess
+            log('s.findAncestors -> Had to guess ID for s.ancestorID.mobile_bookmarks')
+        }
+
+        if (typeof(callback) === 'function') {
+            callback()
+        }
+    })
+} // s.findAncestors
+
 s.get = function s_get(id, callback) { //
     /*
     Helper function for humans that are poking around.
@@ -152,19 +198,20 @@ s.get_ancestor_then_sort = function s_get_ancestor_then_sort(id, relay_id, paren
 s.init = function s_init() {
     chrome.bookmarks.onImportBegan.addListener(function() {
         s.status.import_active = true
+        log('Import began')
     })
 
     chrome.bookmarks.onImportEnded.addListener(function() {
         log('Import finished')
-        chrome.bookmarks.getChildren('0', function(o) {
-            var i
-            s.ancestor.bookmarks_bar = parseInteger(o[0].id)
-            s.ancestor.other_bookmarks = parseInteger(o[1].id)
-            for (i in o) {
-                s.a.sort_queue.push(o[i].id)
-                s.sort(o[i].id, o[i].id, 'recurse')
-            }
-            s.status.import_active = false
+
+        s.findAncestors(function() {
+            chrome.bookmarks.getChildren('0', function(o) {
+                for (var i in o) {
+                    s.a.sort_queue.push(o[i].id)
+                    s.sort(o[i].id, o[i].id, 'recurse')
+                }
+                s.status.import_active = false
+            })
         })
     })
 
@@ -175,16 +222,13 @@ s.init = function s_init() {
         }
     })
 
-    // By default id 1 will be the 'Bookmarks Bar' and id 2 will be 'Other Bookmarks'.
-    // Sometimes the id of 'Other Bookmarks' can be different if a mass delete and re-import ever took place.
-    chrome.bookmarks.getChildren('0', function(o) {
-        var i
-        s.ancestor.bookmarks_bar = parseInteger(o[0].id)
-        s.ancestor.other_bookmarks = parseInteger(o[1].id)
-        for (i in o) {
-            s.sort(o[i].id, o[i].id, 'recurse')
-        }
-        setTimeout(s.listeners, 500) // wait a short while before attempting to activate bookmark change listeners so we don't get notified about our own initial sorting activity
+    s.findAncestors(function() {
+        chrome.bookmarks.getChildren('0', function(o) {
+            for (var i in o) {
+                s.sort(o[i].id, o[i].id, 'recurse')
+            }
+            setTimeout(s.listeners, 500) // wait a short while before attempting to activate bookmark change listeners so we don't get notified about our own initial sorting activity
+        })
     })
 } // s.init
 
@@ -206,21 +250,16 @@ s.install_or_upgrade = function s_install_or_upgrade() {
             localStorage['option_create_delay']        = s.defaults.option_create_delay
             localStorage['option_create_delay_detail'] = s.defaults.option_create_delay_detail
 
-            localStorage['option_bookmarks_bar_sort']       = s.defaults.option_bookmarks_bar_sort
-            localStorage['option_bookmarks_bar_sub_sort']   = s.defaults.option_bookmarks_bar_sub_sort
-            localStorage['option_other_bookmarks_sort']     = s.defaults.option_other_bookmarks_sort
-            localStorage['option_other_bookmarks_sub_sort'] = s.defaults.option_other_bookmarks_sub_sort
+            localStorage['option_bookmarks_bar_sort']        = s.defaults.option_bookmarks_bar_sort
+            localStorage['option_bookmarks_bar_sub_sort']    = s.defaults.option_bookmarks_bar_sub_sort
+            localStorage['option_other_bookmarks_sort']      = s.defaults.option_other_bookmarks_sort
+            localStorage['option_other_bookmarks_sub_sort']  = s.defaults.option_other_bookmarks_sub_sort
+            localStorage['option_mobile_bookmarks_sort']     = s.defaults.option_mobile_bookmarks_sort
+            localStorage['option_mobile_bookmarks_sub_sort'] = s.defaults.option_mobile_bookmarks_sub_sort
             s.new_options = true
         } else {
             // check for upgrade tasks
             var messageUpgrade = 'Upgrade task for versions less than: '
-
-            check_version = '2015.7.6.0'
-            if (local_version_less_than(local_version, check_version)) {
-                log(messageUpgrade + check_version)
-                // remove google sync workaround
-                localStorage.removeItem('option_sync')
-            }
 
             check_version = '2012.8.13.0'
             if (local_version_less_than(local_version, check_version)) {
@@ -239,6 +278,13 @@ s.install_or_upgrade = function s_install_or_upgrade() {
                 s.new_options = true
             }
 
+            check_version = '2015.7.6.0'
+            if (local_version_less_than(local_version, check_version)) {
+                log(messageUpgrade + check_version)
+                // remove google sync workaround
+                localStorage.removeItem('option_sync')
+            }
+
             check_version = '2016.4.6.0'
             if (local_version_less_than(local_version, check_version)) {
                 log(messageUpgrade + check_version)
@@ -247,6 +293,15 @@ s.install_or_upgrade = function s_install_or_upgrade() {
                 localStorage['option_bookmarks_bar_sub_sort']   = s.defaults.option_bookmarks_bar_sub_sort
                 localStorage['option_other_bookmarks_sort']     = s.defaults.option_other_bookmarks_sort
                 localStorage['option_other_bookmarks_sub_sort'] = s.defaults.option_other_bookmarks_sub_sort
+                s.new_options = true
+            }
+
+            check_version = '2016.11.6.0'
+            if (local_version_less_than(local_version, check_version)) {
+                log(messageUpgrade + check_version)
+                // add new mobile bookmarks sorting options
+                localStorage['option_mobile_bookmarks_sort']     = s.defaults.option_mobile_bookmarks_sort
+                localStorage['option_mobile_bookmarks_sub_sort'] = s.defaults.option_mobile_bookmarks_sub_sort
                 s.new_options = true
             }
         }
@@ -305,8 +360,7 @@ s.listeners = function s_listeners() {
                 }
             }
         })
-        log('All listeners active.')
-        log(' ')
+        log('All listeners active.\n')
     }
 } // s.listeners
 
@@ -315,20 +369,26 @@ s.ready_options = function s_ready_options() {
     // Set options based on localStorage values (if any)
     //---------------------------------------------------
     s.option = {
-        'group_folders'      : (localStorage['option_group_folders'] == 1) ? true : false,
-        'bookmarks_bar'      : (localStorage['option_bookmarks_bar'] == 1) ? true : false,
-        'bookmarks_bar_sub'  : (localStorage['option_bookmarks_bar_sub'] == 1) ? true : false,
-        'other_bookmarks'    : (localStorage['option_other_bookmarks'] == 1) ? true : false,
-        'other_bookmarks_sub': (localStorage['option_other_bookmarks_sub'] == 1) ? true : false,
-        'create_delay'       : (localStorage['option_create_delay'] == 1) ? true : false,
-        'create_delay_detail': (localStorage['option_create_delay_detail'] >= 0) ? localStorage['option_create_delay_detail'] : s.defaults.option_create_delay_detail
+        'group_folders'       : (localStorage['option_group_folders'] == 1)        ? true : false,
+        'bookmarks_bar'       : (localStorage['option_bookmarks_bar'] == 1)        ? true : false,
+        'bookmarks_bar_sub'   : (localStorage['option_bookmarks_bar_sub'] == 1)    ? true : false,
+        'other_bookmarks'     : (localStorage['option_other_bookmarks'] == 1)      ? true : false,
+        'other_bookmarks_sub' : (localStorage['option_other_bookmarks_sub'] == 1)  ? true : false,
+        'mobile_bookmarks'    : (localStorage['option_mobile_bookmarks'] == 1)     ? true : false,
+        'mobile_bookmarks_sub': (localStorage['option_mobile_bookmarks_sub'] == 1) ? true : false,
+        'create_delay'        : (localStorage['option_create_delay'] == 1)         ? true : false,
+        'create_delay_detail' : (localStorage['option_create_delay_detail'] >= 0)  ? localStorage['option_create_delay_detail'] : s.defaults.option_create_delay_detail
     }
 
     // sorting options
-    s.option.bookmarks_bar_sort       = (typeof(localStorage['option_bookmarks_bar_sort'])       === 'string') ? localStorage['option_bookmarks_bar_sort']       : s.defaults.option_bookmarks_bar_sort
-    s.option.bookmarks_bar_sub_sort   = (typeof(localStorage['option_bookmarks_bar_sub_sort'])   === 'string') ? localStorage['option_bookmarks_bar_sub_sort']   : s.defaults.option_bookmarks_bar_sub_sort
-    s.option.other_bookmarks_sort     = (typeof(localStorage['option_other_bookmarks_sort'])     === 'string') ? localStorage['option_other_bookmarks_sort']     : s.defaults.option_other_bookmarks_sort
-    s.option.other_bookmarks_sub_sort = (typeof(localStorage['option_other_bookmarks_sub_sort']) === 'string') ? localStorage['option_other_bookmarks_sub_sort'] : s.defaults.option_other_bookmarks_sub_sort
+    s.option.bookmarks_bar_sort       = (typeof(localStorage['option_bookmarks_bar_sort'])         === 'string') ? localStorage['option_bookmarks_bar_sort']       : s.defaults.option_bookmarks_bar_sort
+    s.option.bookmarks_bar_sub_sort   = (typeof(localStorage['option_bookmarks_bar_sub_sort'])     === 'string') ? localStorage['option_bookmarks_bar_sub_sort']   : s.defaults.option_bookmarks_bar_sub_sort
+
+    s.option.other_bookmarks_sort     = (typeof(localStorage['option_other_bookmarks_sort'])       === 'string') ? localStorage['option_other_bookmarks_sort']     : s.defaults.option_other_bookmarks_sort
+    s.option.other_bookmarks_sub_sort = (typeof(localStorage['option_other_bookmarks_sub_sort'])   === 'string') ? localStorage['option_other_bookmarks_sub_sort'] : s.defaults.option_other_bookmarks_sub_sort
+
+    s.option.mobile_bookmarks_sort     = (typeof(localStorage['option_mobile_bookmarks_sort'])     === 'string') ? localStorage['option_mobile_bookmarks_sort']     : s.defaults.option_mobile_bookmarks_sort
+    s.option.mobile_bookmarks_sub_sort = (typeof(localStorage['option_mobile_bookmarks_sub_sort']) === 'string') ? localStorage['option_mobile_bookmarks_sub_sort'] : s.defaults.option_mobile_bookmarks_sub_sort
 
     if (s.new_options) {
         // first time or new options are available so show the options page
@@ -429,12 +489,12 @@ s.reorder_queue = function s_reorder_queue(parent_id) {
 } // s.reorder_queue
 
 s.resort = function s_resort() {
-    chrome.bookmarks.getChildren('0', function(o) {
-        s.ancestor.bookmarks_bar = parseInteger(o[0].id)
-        s.ancestor.other_bookmarks = parseInteger(o[1].id)
-        for (var i in o) {
-            s.sort(o[i].id, o[i].id, 'recurse')
-        }
+    s.findAncestors(function() {
+        chrome.bookmarks.getChildren('0', function(o) {
+            for (var i in o) {
+                s.sort(o[i].id, o[i].id, 'recurse')
+            }
+        })
     })
 } // s.resort
 
@@ -442,7 +502,7 @@ s.sort = function s_sort(id, parent_id, recurse, ancestor) {
     id = parseInteger(id)
     parent_id = parseInteger(parent_id === undefined ? id : parent_id)
     recurse = (recurse === undefined) ? false : recurse
-    if (id == s.ancestor.bookmarks_bar || id == s.ancestor.other_bookmarks) {
+    if (id === s.ancestorID.bookmarks_bar || id === s.ancestorID.other_bookmarks || id === s.ancestorID.mobile_bookmarks) {
         ancestor = id // be your own ancestor with time travel!
     }
     ancestor = (ancestor === undefined) ? -1 : parseInteger(ancestor)
@@ -453,7 +513,7 @@ s.sort = function s_sort(id, parent_id, recurse, ancestor) {
             var allow_recurse = true,
                 break_sort = false
 
-            if (parent_id === s.ancestor.bookmarks_bar && !s.option.bookmarks_bar) {
+            if (parent_id === s.ancestorID.bookmarks_bar && !s.option.bookmarks_bar) {
                 log('No need to sort Bookmarks Bar root.')
                 break_sort = true
                 if (!s.option.bookmarks_bar_sub) {
@@ -461,11 +521,11 @@ s.sort = function s_sort(id, parent_id, recurse, ancestor) {
                     log('No need to sort Bookmarks Bar Sub Folders.')
                     allow_recurse = false
                 }
-            } else if (ancestor !== parent_id && ancestor === s.ancestor.bookmarks_bar && !s.option.bookmarks_bar_sub) {
+            } else if (ancestor !== parent_id && ancestor === s.ancestorID.bookmarks_bar && !s.option.bookmarks_bar_sub) {
                 log('No need to sort Bookmarks Bar Sub Folders.')
                 allow_recurse = false
                 break_sort = true
-            } else if (parent_id === s.ancestor.other_bookmarks && !s.option.other_bookmarks) {
+            } else if (parent_id === s.ancestorID.other_bookmarks && !s.option.other_bookmarks) {
                 log('No need to sort Other Bookmarks root.')
                 break_sort = true
                 if (!s.option.other_bookmarks_sub) {
@@ -473,15 +533,26 @@ s.sort = function s_sort(id, parent_id, recurse, ancestor) {
                     log('No need to sort Other Bookmarks Sub Folders.')
                     allow_recurse = false
                 }
-            } else if (ancestor !== parent_id && ancestor === s.ancestor.other_bookmarks && !s.option.other_bookmarks_sub) {
+            } else if (ancestor !== parent_id && ancestor === s.ancestorID.other_bookmarks && !s.option.other_bookmarks_sub) {
                 log('No need to sort Other Bookmarks Sub Folders.')
+                allow_recurse = false
+                break_sort = true
+            } else if (parent_id === s.ancestorID.mobile_bookmarks && !s.option.mobile_bookmarks) {
+                log('No need to sort Mobile Bookmarks root.')
+                break_sort = true
+                if (!s.option.mobile_bookmarks_sub) {
+                    // no need for subs either
+                    log('No need to sort Mobile Bookmarks Sub Folders.')
+                    allow_recurse = false
+                }
+            } else if (ancestor !== parent_id && ancestor === s.ancestorID.mobile_bookmarks && !s.option.mobile_bookmarks_sub) {
+                log('No need to sort Mobile Bookmarks Sub Folders.')
                 allow_recurse = false
                 break_sort = true
             }
 
             if (allow_recurse && recurse) {
-                var i
-                for (i in a) {
+                for (var i in a) {
                     if (a[i].url === undefined) {
                         // we have a folder so recursively call our own function to support unlimited folder depth
                         s.sort(a[i].id, a[i].id, recurse, ancestor)
@@ -554,18 +625,24 @@ s.sort = function s_sort(id, parent_id, recurse, ancestor) {
                         } else {
                             var sortOrder = ''
 
-                            if (parent_id === s.ancestor.bookmarks_bar) {
+                            if (parent_id === s.ancestorID.bookmarks_bar) {
                                 // bookmarks bar
                                 sortOrder = s.option.bookmarks_bar_sort
-                            } else if (ancestor !== parent_id && ancestor === s.ancestor.bookmarks_bar) {
+                            } else if (ancestor !== parent_id && ancestor === s.ancestorID.bookmarks_bar) {
                                 // bookmarks bar sub folders
                                 sortOrder = s.option.bookmarks_bar_sub_sort
-                            } else if (parent_id === s.ancestor.other_bookmarks) {
+                            } else if (parent_id === s.ancestorID.other_bookmarks) {
                                 // other bookmarks
                                 sortOrder = s.option.other_bookmarks_sort
-                            } else if (ancestor !== parent_id && ancestor === s.ancestor.other_bookmarks) {
+                            } else if (ancestor !== parent_id && ancestor === s.ancestorID.other_bookmarks) {
                                 // other bookmarks sub folders
                                 sortOrder = s.option.other_bookmarks_sub_sort
+                            } else if (parent_id === s.ancestorID.mobile_bookmarks) {
+                                // mobile bookmarks
+                                sortOrder = s.option.mobile_bookmarks_sort
+                            } else if (ancestor !== parent_id && ancestor === s.ancestorID.mobile_bookmarks) {
+                                // mobile bookmarks sub folders
+                                sortOrder = s.option.mobile_bookmarks_sub_sort
                             }
 
                             if (sortOrder === 'alpha' || sortOrder === '') {
