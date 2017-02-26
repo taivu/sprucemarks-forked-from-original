@@ -142,17 +142,17 @@ s.findAncestors = function s_findAncestors(callback) {
 
         if (s.ancestorID.bookmarks_bar === null) {
             s.ancestorID.bookmarks_bar = 1 // best guess
-            log('s.findAncestors -> Had to guess ID for s.ancestorID.bookmarks_bar')
+            console.log('s.findAncestors -> Had to guess ID for s.ancestorID.bookmarks_bar')
         }
 
         if (s.ancestorID.other_bookmarks === null) {
             s.ancestorID.other_bookmarks = 2 // best guess
-            log('s.findAncestors -> Had to guess ID for s.ancestorID.other_bookmarks')
+            console.log('s.findAncestors -> Had to guess ID for s.ancestorID.other_bookmarks')
         }
 
         if (s.ancestorID.mobile_bookmarks === null) {
             s.ancestorID.mobile_bookmarks = 3 // best guess
-            log('s.findAncestors -> Had to guess ID for s.ancestorID.mobile_bookmarks')
+            console.log('s.findAncestors -> Had to guess ID for s.ancestorID.mobile_bookmarks')
         }
 
         if (typeof(callback) === 'function') {
@@ -560,7 +560,7 @@ s.sort = function s_sort(id, parent_id, recurse, ancestor) {
                 }
             }
 
-            if (break_sort) {
+            if (break_sort || a.length < 2) {
                 // remove folder from the queue but only if the listeners are active (aka we finished the initial import)
                 if (s.status.listeners_active) {
                     log('s.sort > No need to reorder, removing parent folder from \'s.a.sort_queue\'')
