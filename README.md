@@ -21,7 +21,7 @@ Everything in the `deploy` directory should be zipped and then uploaded via the 
 You can help in any number of ways; here are a few ideas to get you started.
 
 * Help other people get organized by pointing them to [Sprucemarks](https://chrome.google.com/webstore/detail/sprucemarks/fakeocdnmmmnokabaiflppclocckihoj).
-* [Create an issue](https://github.com/ForestMist/sprucemarks/issues) if you notice anything odd.
+* [Create an issue](https://github.com/ForestMist/sprucemarks/issues) if you notice a bug.
 * Fork this repository and use it as a basis for your own super awesome Chrome Extension.
 
 Cheers!
