@@ -15,8 +15,8 @@ var s = { // s is short for Sprucemarks
         'mobile_bookmarks': null  // usually ID 3
     },
     'defaults': {
-        'option_create_delay'             : 1,
-        'option_create_delay_detail'      : 45,
+        'option_create_delay'             : '1',
+        'option_create_delay_detail'      : '45',
         'option_bookmarks_bar_sort'       : '',
         'option_bookmarks_bar_sub_sort'   : '',
         'option_other_bookmarks_sort'     : '',
@@ -36,11 +36,18 @@ var s = { // s is short for Sprucemarks
         'current': function() {
             return chrome.app.getDetails().version
         },
-        'local': function(set) {
+        'local': async function(set) {
             if (set === undefined) {
-                return localStorage['version']
+                var version = await storageGet('version')
+                if (version === undefined) {
+                    return localStorage['version'] // for versions prior to 2018.2.10.0 which used localStorage
+                } else {
+                    return version
+                }
             } else {
-                localStorage['version'] = this.current()
+                await storageSet({
+                    'version': this.current()
+                })
             }
         }
     }
@@ -81,7 +88,7 @@ function parseInteger(val) {
     return parseInt(val, 10)
 } // parseInteger
 
-function stop_collaborate_and_listen(request, sender, sendResponse) {
+async function stop_collaborate_and_listen(request, sender, sendResponse) {
     // Ice is back with a brand new function
     if (request.request === 'options') {
         // return all our options
@@ -91,20 +98,38 @@ function stop_collaborate_and_listen(request, sender, sendResponse) {
         var val
         log(request.option)
         s.option = request.option // overwrite our local copy of options with any potentially changed values
-        for (var i in s.option) { // save all options to localStorage
+        for (var i in s.option) { // save all options to storage
             if (s.option[i] === true) {
-                val = 1
+                val = '1'
             } else if (s.option[i] === false) {
-                val = 0
+                val = '0'
             } else {
                 val = s.option[i]
             }
-            localStorage['option_' + i] = val
+            await storageSet({['option_' + i]: val})
         }
         sendResponse({'message': 'thanks'})
         s.resort()
     }
 } // stop_collaborate_and_listen
+
+async function storageGet(key) {
+    return await new Promise(function(resolve, reject) {
+        chrome.storage.local.get(key, function(obj) {
+            // obj can be an empty object
+            // obj will never be undefined according to https://developer.chrome.com/apps/storage#method-StorageArea-get
+            resolve(obj[key]) // this however, can be undefined
+        })
+    })
+} // storageGet
+
+async function storageSet(obj) {
+    await new Promise(function(resolve, reject) {
+        chrome.storage.local.set(obj, function() {
+            resolve()
+        })
+    })
+} // storageSet
 
 //-------------------------------
 // Functions: Sprucemarks Object
@@ -232,8 +257,8 @@ s.init = function s_init() {
     })
 } // s.init
 
-s.install_or_upgrade = function s_install_or_upgrade() {
-    var local_version = s.version.local()
+s.install_or_upgrade = async function s_install_or_upgrade() {
+    var local_version = await s.version.local()
     var check_version = ''
 
     // If the localStorage version does not match our manifest version then we have a first install or upgrade.
@@ -241,21 +266,23 @@ s.install_or_upgrade = function s_install_or_upgrade() {
         if (local_version === undefined) {
             // first install
             log('First install')
-            localStorage['option_group_folders']       = 1
-            localStorage['option_bookmarks_bar']       = 0
-            localStorage['option_bookmarks_bar_sub']   = 0
-            localStorage['option_other_bookmarks']     = 0
-            localStorage['option_other_bookmarks_sub'] = 0
+            await storageSet({'option_group_folders'       : '1'})
+            await storageSet({'option_bookmarks_bar'       : '0'})
+            await storageSet({'option_bookmarks_bar_sub'   : '0'})
+            await storageSet({'option_other_bookmarks'     : '0'})
+            await storageSet({'option_other_bookmarks_sub' : '0'})
+            await storageSet({'option_mobile_bookmarks'    : '0'})
+            await storageSet({'option_mobile_bookmarks_sub': '0'})
 
-            localStorage['option_create_delay']        = s.defaults.option_create_delay
-            localStorage['option_create_delay_detail'] = s.defaults.option_create_delay_detail
+            await storageSet({'option_create_delay'       : s.defaults.option_create_delay})
+            await storageSet({'option_create_delay_detail': s.defaults.option_create_delay_detail})
 
-            localStorage['option_bookmarks_bar_sort']        = s.defaults.option_bookmarks_bar_sort
-            localStorage['option_bookmarks_bar_sub_sort']    = s.defaults.option_bookmarks_bar_sub_sort
-            localStorage['option_other_bookmarks_sort']      = s.defaults.option_other_bookmarks_sort
-            localStorage['option_other_bookmarks_sub_sort']  = s.defaults.option_other_bookmarks_sub_sort
-            localStorage['option_mobile_bookmarks_sort']     = s.defaults.option_mobile_bookmarks_sort
-            localStorage['option_mobile_bookmarks_sub_sort'] = s.defaults.option_mobile_bookmarks_sub_sort
+            await storageSet({'option_bookmarks_bar_sort'       : s.defaults.option_bookmarks_bar_sort})
+            await storageSet({'option_bookmarks_bar_sub_sort'   : s.defaults.option_bookmarks_bar_sub_sort})
+            await storageSet({'option_other_bookmarks_sort'     : s.defaults.option_other_bookmarks_sort})
+            await storageSet({'option_other_bookmarks_sub_sort' : s.defaults.option_other_bookmarks_sub_sort})
+            await storageSet({'option_mobile_bookmarks_sort'    : s.defaults.option_mobile_bookmarks_sort})
+            await storageSet({'option_mobile_bookmarks_sub_sort': s.defaults.option_mobile_bookmarks_sub_sort})
             s.new_options = true
         } else {
             // check for upgrade tasks
@@ -304,9 +331,35 @@ s.install_or_upgrade = function s_install_or_upgrade() {
                 localStorage['option_mobile_bookmarks_sub_sort'] = s.defaults.option_mobile_bookmarks_sub_sort
                 s.new_options = true
             }
+
+            check_version = '2018.2.10.0'
+            if (local_version_less_than(local_version, check_version)) {
+                log(messageUpgrade + check_version)
+                // migrate from localStorage to chrome.storage
+                await storageSet({'option_group_folders'       : localStorage['option_group_folders']})
+                await storageSet({'option_bookmarks_bar'       : localStorage['option_bookmarks_bar']})
+                await storageSet({'option_bookmarks_bar_sub'   : localStorage['option_bookmarks_bar_sub']})
+                await storageSet({'option_other_bookmarks'     : localStorage['option_other_bookmarks']})
+                await storageSet({'option_other_bookmarks_sub' : localStorage['option_other_bookmarks_sub']})
+                await storageSet({'option_mobile_bookmarks'    : localStorage['option_mobile_bookmarks']})
+                await storageSet({'option_mobile_bookmarks_sub': localStorage['option_mobile_bookmarks_sub']})
+
+                await storageSet({'option_create_delay'       : localStorage['option_create_delay']})
+                await storageSet({'option_create_delay_detail': localStorage['option_create_delay_detail']})
+
+                await storageSet({'option_bookmarks_bar_sort'       : localStorage['option_bookmarks_bar_sort']})
+                await storageSet({'option_bookmarks_bar_sub_sort'   : localStorage['option_bookmarks_bar_sub_sort']})
+                await storageSet({'option_other_bookmarks_sort'     : localStorage['option_other_bookmarks_sort']})
+                await storageSet({'option_other_bookmarks_sub_sort' : localStorage['option_other_bookmarks_sub_sort']})
+                await storageSet({'option_mobile_bookmarks_sort'    : localStorage['option_mobile_bookmarks_sort']})
+                await storageSet({'option_mobile_bookmarks_sub_sort': localStorage['option_mobile_bookmarks_sub_sort']})
+
+                // so long, and thanks for all the fish
+                localStorage.clear()
+            }
         }
 
-        // update the localStorage version for next time
+        // update the storage version for next time
         s.version.local('set')
     }
 } // s.install_or_upgrade
@@ -364,31 +417,31 @@ s.listeners = function s_listeners() {
     }
 } // s.listeners
 
-s.ready_options = function s_ready_options() {
-    //---------------------------------------------------
-    // Set options based on localStorage values (if any)
-    //---------------------------------------------------
+s.ready_options = async function s_ready_options() {
+    //----------------------------------------------
+    // Set options based on storage values (if any)
+    //----------------------------------------------
     s.option = {
-        'group_folders'       : (localStorage['option_group_folders'] == 1)        ? true : false,
-        'bookmarks_bar'       : (localStorage['option_bookmarks_bar'] == 1)        ? true : false,
-        'bookmarks_bar_sub'   : (localStorage['option_bookmarks_bar_sub'] == 1)    ? true : false,
-        'other_bookmarks'     : (localStorage['option_other_bookmarks'] == 1)      ? true : false,
-        'other_bookmarks_sub' : (localStorage['option_other_bookmarks_sub'] == 1)  ? true : false,
-        'mobile_bookmarks'    : (localStorage['option_mobile_bookmarks'] == 1)     ? true : false,
-        'mobile_bookmarks_sub': (localStorage['option_mobile_bookmarks_sub'] == 1) ? true : false,
-        'create_delay'        : (localStorage['option_create_delay'] == 1)         ? true : false,
-        'create_delay_detail' : (localStorage['option_create_delay_detail'] >= 0)  ? localStorage['option_create_delay_detail'] : s.defaults.option_create_delay_detail
+        'group_folders'       : (await storageGet('option_group_folders') == 1)        ? true : false,
+        'bookmarks_bar'       : (await storageGet('option_bookmarks_bar') == 1)        ? true : false,
+        'bookmarks_bar_sub'   : (await storageGet('option_bookmarks_bar_sub') == 1)    ? true : false,
+        'other_bookmarks'     : (await storageGet('option_other_bookmarks') == 1)      ? true : false,
+        'other_bookmarks_sub' : (await storageGet('option_other_bookmarks_sub') == 1)  ? true : false,
+        'mobile_bookmarks'    : (await storageGet('option_mobile_bookmarks') == 1)     ? true : false,
+        'mobile_bookmarks_sub': (await storageGet('option_mobile_bookmarks_sub') == 1) ? true : false,
+        'create_delay'        : (await storageGet('option_create_delay') == 1)         ? true : false,
+        'create_delay_detail' : (await storageGet('option_create_delay_detail') >= 0)  ? await storageGet('option_create_delay_detail') : s.defaults.option_create_delay_detail
     }
 
     // sorting options
-    s.option.bookmarks_bar_sort       = (typeof(localStorage['option_bookmarks_bar_sort'])         === 'string') ? localStorage['option_bookmarks_bar_sort']       : s.defaults.option_bookmarks_bar_sort
-    s.option.bookmarks_bar_sub_sort   = (typeof(localStorage['option_bookmarks_bar_sub_sort'])     === 'string') ? localStorage['option_bookmarks_bar_sub_sort']   : s.defaults.option_bookmarks_bar_sub_sort
+    s.option.bookmarks_bar_sort        = (typeof(await storageGet('option_bookmarks_bar_sort'))        === 'string') ? await storageGet('option_bookmarks_bar_sort')        : s.defaults.option_bookmarks_bar_sort
+    s.option.bookmarks_bar_sub_sort    = (typeof(await storageGet('option_bookmarks_bar_sub_sort'))    === 'string') ? await storageGet('option_bookmarks_bar_sub_sort')    : s.defaults.option_bookmarks_bar_sub_sort
 
-    s.option.other_bookmarks_sort     = (typeof(localStorage['option_other_bookmarks_sort'])       === 'string') ? localStorage['option_other_bookmarks_sort']     : s.defaults.option_other_bookmarks_sort
-    s.option.other_bookmarks_sub_sort = (typeof(localStorage['option_other_bookmarks_sub_sort'])   === 'string') ? localStorage['option_other_bookmarks_sub_sort'] : s.defaults.option_other_bookmarks_sub_sort
+    s.option.other_bookmarks_sort      = (typeof(await storageGet('option_other_bookmarks_sort'))      === 'string') ? await storageGet('option_other_bookmarks_sort')      : s.defaults.option_other_bookmarks_sort
+    s.option.other_bookmarks_sub_sort  = (typeof(await storageGet('option_other_bookmarks_sub_sort'))  === 'string') ? await storageGet('option_other_bookmarks_sub_sort')  : s.defaults.option_other_bookmarks_sub_sort
 
-    s.option.mobile_bookmarks_sort     = (typeof(localStorage['option_mobile_bookmarks_sort'])     === 'string') ? localStorage['option_mobile_bookmarks_sort']     : s.defaults.option_mobile_bookmarks_sort
-    s.option.mobile_bookmarks_sub_sort = (typeof(localStorage['option_mobile_bookmarks_sub_sort']) === 'string') ? localStorage['option_mobile_bookmarks_sub_sort'] : s.defaults.option_mobile_bookmarks_sub_sort
+    s.option.mobile_bookmarks_sort     = (typeof(await storageGet('option_mobile_bookmarks_sort'))     === 'string') ? await storageGet('option_mobile_bookmarks_sort')     : s.defaults.option_mobile_bookmarks_sort
+    s.option.mobile_bookmarks_sub_sort = (typeof(await storageGet('option_mobile_bookmarks_sub_sort')) === 'string') ? await storageGet('option_mobile_bookmarks_sub_sort') : s.defaults.option_mobile_bookmarks_sub_sort
 
     if (s.new_options) {
         // first time or new options are available so show the options page
@@ -748,7 +801,11 @@ s.sort_buffer = function s_sort_buffer(id, parent_id) {
 //------------
 // Party Time
 //------------
-s.install_or_upgrade()
-s.ready_options()
-chrome.extension.onMessage.addListener(stop_collaborate_and_listen)
-s.init()
+async function partyTime() {
+    await s.install_or_upgrade()
+    await s.ready_options()
+    chrome.extension.onMessage.addListener(stop_collaborate_and_listen)
+    s.init()
+}
+
+partyTime()
