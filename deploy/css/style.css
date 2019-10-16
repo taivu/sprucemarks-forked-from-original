@@ -1,4 +1,5 @@
 body {
+    cursor: default;
     font-family: Helvetica, Arial, sans-serif;
 }
 body * {
@@ -14,6 +15,7 @@ body * {
 }
 a {
     color: #3e94d6;
+    cursor: pointer;
     text-decoration: none;
 }
 a:hover,
@@ -22,29 +24,24 @@ a:focus {
     text-decoration: underline;
 }
 header {
-    background: url('../images/icon128.png') no-repeat 10px 10px;
+    background: url('/images/icon128.png') no-repeat 10px 10px;
     float: left;
     height: 148px;
     padding: 0 0 0 156px;
     position: relative;
     width: 720px;
 }
+header h1 {
+    padding-top: 50px;
+}
 h1 {
     color: #666;
     font-size: 36px;
     font-weight: bold;
     margin: 0;
-    padding-top: 50px;
-}
-h1 a,
-h1 a:hover,
-h1 a:focus {
-    color: #666;
-    text-decoration: none;
 }
 h2 {
     color: #666;
-    cursor: default;
     font-size: 12px;
     line-height: 0;
     margin: 3px 0 0 45px;
@@ -58,7 +55,7 @@ hr {
     display: block;
     float: left;
     height: 20px;
-    margin: 0 0 62px 0;
+    margin: 0 0 35px 0;
     width: 100%;
 }
 label {
@@ -88,11 +85,16 @@ button {
     font-size: 14px;
     margin-left: 179px;
 }
+.content {
+    font-size: 1.35em;
+}
+.content,
 .option {
     clear: both;
     margin: 0 0 18px 0;
     padding: 0 0 18px 0;
 }
+.content,
 .option,
 .option-title,
 .option-choice,
@@ -179,13 +181,12 @@ button {
     color: #666;
 }
 #options-saved {
-    cursor: default;
     font-weight: bold;
     float: left;
-    margin: 10px 0 0 10px;
+    font-size: 1.6em;
+    margin: 7px 0 0 15px;
     opacity: 0;
-    text-align: center;
-    width: 120px;
+    text-align: left;
 }
 @-webkit-keyframes savedAnimation {
     0%   { opacity: 0; }
