@@ -95,6 +95,8 @@ async function stop_collaborate_and_listen(request, sender, sendResponse) {
         sendResponse(s.option)
     } else if (request.request === 'options_set') {
         // set our options
+        sendResponse({'message': 'thanks'})
+
         var val
         log(request.option)
         s.option = request.option // overwrite our local copy of options with any potentially changed values
@@ -108,7 +110,6 @@ async function stop_collaborate_and_listen(request, sender, sendResponse) {
             }
             await storageSet({['option_' + i]: val})
         }
-        sendResponse({'message': 'thanks'})
         s.resort()
     }
 } // stop_collaborate_and_listen
